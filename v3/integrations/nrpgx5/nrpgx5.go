@@ -15,7 +15,7 @@ func init() {
 }
 
 type (
-	NrPgx5 struct {
+	Tracer struct {
 		BaseSegment newrelic.DatastoreSegment
 		ParseQuery  func(segment *newrelic.DatastoreSegment, query string)
 	}
@@ -28,15 +28,15 @@ const (
 	prepareSegmentKey nrPgxSegmentType = "prepareNrPgxSegment"
 )
 
-func NewNrPgx5() *NrPgx5 {
-	return &NrPgx5{
+func NewTracer() *Tracer {
+	return &Tracer{
 		ParseQuery: sqlparse.ParseQuery,
 	}
 }
 
 // TraceConnectStart is called at the beginning of Connect and ConnectConfig calls. The returned context is used for
 // the rest of the call and will be passed to TraceConnectEnd.
-func (n *NrPgx5) TraceConnectStart(ctx context.Context, data pgx.TraceConnectStartData) context.Context {
+func (n *Tracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnectStartData) context.Context {
 	n.BaseSegment = newrelic.DatastoreSegment{
 		Product:      newrelic.DatastorePostgres,
 		Host:         data.ConnConfig.Host,
@@ -48,11 +48,11 @@ func (n *NrPgx5) TraceConnectStart(ctx context.Context, data pgx.TraceConnectSta
 }
 
 // TraceConnectEnd method // implement pgx.ConnectTracer
-func (NrPgx5) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEndData) {}
+func (Tracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEndData) {}
 
 // TraceQueryStart is called at the beginning of Query, QueryRow, and Exec calls. The returned context is used for the
 // rest of the call and will be passed to TraceQueryEnd.
-func (n *NrPgx5) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+func (n *Tracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 	segment := n.BaseSegment
 	segment.StartTime = newrelic.FromContext(ctx).StartSegmentNow()
 	segment.ParameterizedQuery = data.SQL
@@ -65,7 +65,7 @@ func (n *NrPgx5) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.T
 }
 
 // TraceQueryEnd method implement pgx.QueryTracer. It will try to get segment from context and end it.
-func (n *NrPgx5) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
+func (n *Tracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
 	segment, ok := ctx.Value(querySegmentKey).(*newrelic.DatastoreSegment)
 	if !ok {
 		return
@@ -73,7 +73,7 @@ func (n *NrPgx5) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.Tra
 	segment.End()
 }
 
-func (n *NrPgx5) getQueryParameters(args []interface{}) map[string]interface{} {
+func (n *Tracer) getQueryParameters(args []interface{}) map[string]interface{} {
 	result := map[string]interface{}{}
 	for i, arg := range args {
 		result["$"+strconv.Itoa(i)] = arg

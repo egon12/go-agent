@@ -21,7 +21,7 @@ func getTestCon(t testing.TB) (*pgx.Conn, func()) {
 	// snap := pgsnap.NewSnap(t, "")
 
 	cfg, _ := pgx.ParseConfig(snap.Addr())
-	cfg.Tracer = NewNrPgx5()
+	cfg.Tracer = NewTracer()
 
 	con, _ := pgx.ConnectConfig(context.Background(), cfg)
 
@@ -31,7 +31,7 @@ func getTestCon(t testing.TB) (*pgx.Conn, func()) {
 	}
 }
 
-func TestNrPgx5_Trace_CRUD(t *testing.T) {
+func TestTracer_Trace_CRUD(t *testing.T) {
 	con, finish := getTestCon(t)
 	defer finish()
 
@@ -117,12 +117,12 @@ func TestNrPgx5_Trace_CRUD(t *testing.T) {
 	}
 }
 
-func TestNrPgx5_connect(t *testing.T) {
+func TestTracer_connect(t *testing.T) {
 	conn, finish := getTestCon(t)
 	defer finish()
 
 	cfg := conn.Config()
-	tracer := cfg.Tracer.(*NrPgx5)
+	tracer := cfg.Tracer.(*Tracer)
 
 	// hostname will
 	t.Run("connect should set tracer host port and database", func(t *testing.T) {

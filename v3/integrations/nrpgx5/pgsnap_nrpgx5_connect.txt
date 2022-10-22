@@ -1,5 +1,0 @@
-F {"Type":"Parse","Name":"stmtcache_6","Query":"INSERT INTO mytable(name) VALUES ($1)","ParameterOIDs":null}
-F {"Type":"Describe","ObjectType":"S","Name":"stmtcache_6"}
-F {"Type":"Sync"}
-B {"Type":"ErrorResponse","Severity":"ERROR","SeverityUnlocalized":"ERROR","Code":"42P01","Message":"relation \"mytable\" does not exist","Detail":"","Hint":"","Position":13,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"parse_relation.c","Line":1384,"Routine":"parserOpenTable","UnknownFields":null}
-B {"Type":"ReadyForQuery","TxStatus":"I"}
