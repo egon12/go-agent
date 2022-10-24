@@ -2,12 +2,14 @@ package nrpgx5
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"strconv"
 	"testing"
 
 	"github.com/egon12/pgsnap"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/newrelic/go-agent/v3/internal"
 	"github.com/newrelic/go-agent/v3/internal/integrationsupport"
 	"github.com/newrelic/go-agent/v3/newrelic"
@@ -16,9 +18,13 @@ import (
 
 // to create pgnsap__** snapshot file, we are using real database.
 // delete all pgnap_*.txt file and fill PGSNAP_DB_URL to recreate the snapshot file
+// for example run it with
+// ```sh
+// PGSNAP_DB_URL="postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" go test -v -run TestTracer_Trace_CRUD
+// ```
+
 func getTestCon(t testing.TB) (*pgx.Conn, func()) {
-	snap := pgsnap.NewSnap(t, "")
-	// snap := pgsnap.NewSnap(t, "")
+	snap := pgsnap.NewSnap(t, os.Getenv("PGSNAP_DB_URL"))
 
 	cfg, _ := pgx.ParseConfig(snap.Addr())
 	cfg.Tracer = NewTracer()
@@ -176,6 +182,108 @@ func TestTracer_batch(t *testing.T) {
 			{Name: "Datastore/operation/Postgres/batch"},
 		})
 	})
+}
+
+func TestTracer_inPool(t *testing.T) {
+	snap := pgsnap.NewSnap(t, os.Getenv("PGSNAP_DB_URL"))
+	defer snap.Finish()
+
+	cfg, _ := pgxpool.ParseConfig(snap.Addr())
+	cfg.ConnConfig.Tracer = NewTracer()
+
+	u, _ := url.Parse(snap.Addr())
+
+	con, _ := pgxpool.NewWithConfig(context.Background(), cfg)
+
+	tests := []struct {
+		name   string
+		fn     func(context.Context, *pgxpool.Pool)
+		metric []internal.WantMetric
+	}{
+		{
+			name: "query should send the metric after the row close",
+			fn: func(ctx context.Context, con *pgxpool.Pool) {
+				rows, _ := con.Query(ctx, "SELECT id, name, timestamp FROM mytable LIMIT $1", 2)
+				rows.Close()
+			},
+			metric: []internal.WantMetric{
+				{Name: "Datastore/operation/Postgres/select"},
+				{Name: "Datastore/statement/Postgres/mytable/select"},
+			},
+		},
+		{
+			name: "queryrow should send the metric after scan",
+			fn: func(ctx context.Context, con *pgxpool.Pool) {
+				row := con.QueryRow(ctx, "SELECT id, name, timestamp FROM mytable")
+				_ = row.Scan()
+			},
+			metric: []internal.WantMetric{
+				{Name: "Datastore/operation/Postgres/select"},
+				{Name: "Datastore/statement/Postgres/mytable/select"},
+			},
+		},
+		{
+			name: "insert should send the metric",
+			fn: func(ctx context.Context, con *pgxpool.Pool) {
+				_, _ = con.Exec(ctx, "INSERT INTO mytable(name) VALUES ($1)", "myname is")
+			},
+			metric: []internal.WantMetric{
+				{Name: "Datastore/operation/Postgres/insert"},
+				{Name: "Datastore/statement/Postgres/mytable/insert"},
+			},
+		},
+		{
+			name: "update should send the metric",
+			fn: func(ctx context.Context, con *pgxpool.Pool) {
+				_, _ = con.Exec(ctx, "UPDATE mytable set name = $2 WHERE id = $1", 1, "myname is")
+			},
+			metric: []internal.WantMetric{
+				{Name: "Datastore/operation/Postgres/update"},
+				{Name: "Datastore/statement/Postgres/mytable/update"},
+			},
+		},
+		{
+			name: "delete should send the metric",
+			fn: func(ctx context.Context, con *pgxpool.Pool) {
+				_, _ = con.Exec(ctx, "DELETE FROM mytable WHERE id = $1", 4)
+			},
+			metric: []internal.WantMetric{
+				{Name: "Datastore/operation/Postgres/delete"},
+				{Name: "Datastore/statement/Postgres/mytable/delete"},
+			},
+		},
+		{
+			name: "select 1 should send the metric",
+			fn: func(ctx context.Context, con *pgxpool.Pool) {
+				_, _ = con.Exec(ctx, "SELECT 1")
+			},
+			metric: []internal.WantMetric{
+				{Name: "Datastore/operation/Postgres/select"},
+			},
+		},
+		{
+			name: "metric should send the metric database instance",
+			fn: func(ctx context.Context, con *pgxpool.Pool) {
+				_, _ = con.Exec(ctx, "SELECT 1")
+			},
+			metric: []internal.WantMetric{
+				{Name: "Datastore/instance/Postgres/" + hostnameTest() + "/" + u.Port()},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := integrationsupport.NewBasicTestApp()
+			txn := app.StartTransaction(t.Name())
+			ctx := newrelic.NewContext(context.Background(), txn)
+
+			tt.fn(ctx, con)
+
+			txn.End()
+			app.ExpectMetricsPresent(t, tt.metric)
+		})
+	}
 }
 
 func hostnameTest() string {
