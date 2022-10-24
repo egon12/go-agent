@@ -93,6 +93,26 @@ func TestTracer_Trace_CRUD(t *testing.T) {
 				{Name: "Datastore/operation/Postgres/select"},
 			},
 		},
+		{
+			name: "query error should also send the metric",
+			fn: func(ctx context.Context, con *pgx.Conn) {
+				_, _ = con.Query(ctx, "SELECT * FROM non_existent_table")
+			},
+			metric: []internal.WantMetric{
+				{Name: "Datastore/operation/Postgres/select"},
+				{Name: "Datastore/statement/Postgres/non_existent_table/select"},
+			},
+		},
+		{
+			name: "exec error should also send the metric",
+			fn: func(ctx context.Context, con *pgx.Conn) {
+				_, _ = con.Exec(ctx, "INSERT INTO non_existent_table(name) VALUES ($1)", "wrong name")
+			},
+			metric: []internal.WantMetric{
+				{Name: "Datastore/operation/Postgres/insert"},
+				{Name: "Datastore/statement/Postgres/non_existent_table/insert"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
