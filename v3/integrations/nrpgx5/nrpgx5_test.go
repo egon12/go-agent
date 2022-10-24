@@ -147,6 +147,37 @@ func TestTracer_connect(t *testing.T) {
 	})
 }
 
+func TestTracer_batch(t *testing.T) {
+	conn, finish := getTestCon(t)
+	defer finish()
+
+	cfg := conn.Config()
+	tracer := cfg.Tracer.(*Tracer)
+
+	t.Run("exec should send metric with instance host and port ", func(t *testing.T) {
+		app := integrationsupport.NewBasicTestApp()
+
+		txn := app.StartTransaction(t.Name())
+
+		ctx := newrelic.NewContext(context.Background(), txn)
+		batch := &pgx.Batch{}
+		_ = batch.Queue("INSERT INTO mytable(name) VALUES ($1)", "name a")
+		_ = batch.Queue("INSERT INTO mytable(name) VALUES ($1)", "name b")
+		_ = batch.Queue("INSERT INTO mytable(name) VALUES ($1)", "name c")
+		_ = batch.Queue("SELECT id FROM mytable ORDER by id DESC LIMIT 1")
+		result := conn.SendBatch(ctx, batch)
+
+		_ = result.Close()
+
+		txn.End()
+
+		app.ExpectMetricsPresent(t, []internal.WantMetric{
+			{Name: "Datastore/instance/Postgres/" + hostnameTest() + "/" + tracer.BaseSegment.PortPathOrID},
+			{Name: "Datastore/operation/Postgres/batch"},
+		})
+	})
+}
+
 func hostnameTest() string {
 	h, err := os.Hostname()
 	if err != nil {

@@ -24,8 +24,9 @@ type (
 )
 
 const (
-	querySegmentKey   nrPgxSegmentType = "nrPgxSegment"
-	prepareSegmentKey nrPgxSegmentType = "prepareNrPgxSegment"
+	querySegmentKey   nrPgxSegmentType = "nrPgx5Segment"
+	prepareSegmentKey nrPgxSegmentType = "prepareNrPgx5Segment"
+	batchSegmentKey   nrPgxSegmentType = "batchNrPgx5Segment"
 )
 
 func NewTracer() *Tracer {
@@ -35,9 +36,9 @@ func NewTracer() *Tracer {
 }
 
 // TraceConnectStart is called at the beginning of Connect and ConnectConfig calls. The returned context is used for
-// the rest of the call and will be passed to TraceConnectEnd.
-func (n *Tracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnectStartData) context.Context {
-	n.BaseSegment = newrelic.DatastoreSegment{
+// the rest of the call and will be passed to TraceConnectEnd. // implement pgx.ConnectTracer
+func (t *Tracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnectStartData) context.Context {
+	t.BaseSegment = newrelic.DatastoreSegment{
 		Product:      newrelic.DatastorePostgres,
 		Host:         data.ConnConfig.Host,
 		PortPathOrID: strconv.FormatUint(uint64(data.ConnConfig.Port), 10),
@@ -51,15 +52,15 @@ func (n *Tracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnectSta
 func (Tracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEndData) {}
 
 // TraceQueryStart is called at the beginning of Query, QueryRow, and Exec calls. The returned context is used for the
-// rest of the call and will be passed to TraceQueryEnd.
-func (n *Tracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
-	segment := n.BaseSegment
+// rest of the call and will be passed to TraceQueryEnd. //implement pgx.QueryTracer
+func (t *Tracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+	segment := t.BaseSegment
 	segment.StartTime = newrelic.FromContext(ctx).StartSegmentNow()
 	segment.ParameterizedQuery = data.SQL
-	segment.QueryParameters = n.getQueryParameters(data.Args)
+	segment.QueryParameters = t.getQueryParameters(data.Args)
 
 	// fill Operation and Collection
-	n.ParseQuery(&segment, data.SQL)
+	t.ParseQuery(&segment, data.SQL)
 
 	return context.WithValue(ctx, querySegmentKey, &segment)
 }
@@ -79,4 +80,41 @@ func (n *Tracer) getQueryParameters(args []interface{}) map[string]interface{} {
 		result["$"+strconv.Itoa(i)] = arg
 	}
 	return result
+}
+
+// TraceBatchStart is called at the beginning of SendBatch calls. The returned context is used for the
+// rest of the call and will be passed to TraceBatchQuery and TraceBatchEnd. // implement pgx.BatchTracer
+func (t *Tracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchStartData) context.Context {
+	segment := t.BaseSegment
+	segment.StartTime = newrelic.FromContext(ctx).StartSegmentNow()
+	segment.Operation = "batch"
+	segment.Collection = ""
+
+	return context.WithValue(ctx, batchSegmentKey, &segment)
+}
+
+func (t *Tracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
+	segment, ok := ctx.Value(batchSegmentKey).(*newrelic.DatastoreSegment)
+	if !ok {
+		return
+	}
+
+	segment.ParameterizedQuery += data.SQL + "\n"
+}
+
+func (t *Tracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchEndData) {
+	segment, ok := ctx.Value(batchSegmentKey).(*newrelic.DatastoreSegment)
+	if !ok {
+		return
+	}
+	segment.End()
+}
+
+// TracePrepareStart is called at the beginning of Prepare calls. The returned context is used for the
+// rest of the call and will be passed to TracePrepareEnd.
+func (t *Tracer) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareStartData) context.Context {
+	return ctx
+}
+
+func (Tracer) TracePrepareEnd(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareEndData) {
 }
