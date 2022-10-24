@@ -1,4 +1,4 @@
-// Package nrpgx instruments https://github.com/jackc/pgx/v5.
+// Package nrpgx5 instruments https://github.com/jackc/pgx/v5.
 //
 // Use this package to instrument your PostgreSQL calls using the pgx
 // library.
@@ -119,7 +119,7 @@ func (t *Tracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.T
 }
 
 // TraceQueryEnd method implement pgx.QueryTracer. It will try to get segment from context and end it.
-func (n *Tracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
+func (t *Tracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
 	segment, ok := ctx.Value(querySegmentKey).(*newrelic.DatastoreSegment)
 	if !ok {
 		return
@@ -127,7 +127,7 @@ func (n *Tracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.Tra
 	segment.End()
 }
 
-func (n *Tracer) getQueryParameters(args []interface{}) map[string]interface{} {
+func (t *Tracer) getQueryParameters(args []interface{}) map[string]interface{} {
 	result := map[string]interface{}{}
 	for i, arg := range args {
 		result["$"+strconv.Itoa(i)] = arg
@@ -146,6 +146,7 @@ func (t *Tracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pgx.T
 	return context.WithValue(ctx, batchSegmentKey, &segment)
 }
 
+// TraceBatchQuery implement pgx.BatchTracer. In this method we will get query and store it in segment.
 func (t *Tracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
 	segment, ok := ctx.Value(batchSegmentKey).(*newrelic.DatastoreSegment)
 	if !ok {
@@ -155,6 +156,7 @@ func (t *Tracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.T
 	segment.ParameterizedQuery += data.SQL + "\n"
 }
 
+// TraceBatchEnd implement pgx.BatchTracer. In this method we will get segment from context and fill it with
 func (t *Tracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchEndData) {
 	segment, ok := ctx.Value(batchSegmentKey).(*newrelic.DatastoreSegment)
 	if !ok {
@@ -164,10 +166,13 @@ func (t *Tracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.Tra
 }
 
 // TracePrepareStart is called at the beginning of Prepare calls. The returned context is used for the
-// rest of the call and will be passed to TracePrepareEnd.
+// rest of the call and will be passed to TracePrepareEnd. // implement pgx.PrepareTracer
+// The Query and QueryRow will call prepare. Fill this function will make the datastore segment called twice.
+// So this function woudln't do anything and just return the context.
 func (t *Tracer) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareStartData) context.Context {
 	return ctx
 }
 
-func (Tracer) TracePrepareEnd(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareEndData) {
+// TracePrepareEnd implement pgx.PrepareTracer. In this function nothing happens.
+func (t *Tracer) TracePrepareEnd(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareEndData) {
 }

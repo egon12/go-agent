@@ -23,20 +23,6 @@ import (
 // PGSNAP_DB_URL="postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" go test -v -run TestTracer_Trace_CRUD
 // ```
 
-func getTestCon(t testing.TB) (*pgx.Conn, func()) {
-	snap := pgsnap.NewSnap(t, os.Getenv("PGSNAP_DB_URL"))
-
-	cfg, _ := pgx.ParseConfig(snap.Addr())
-	cfg.Tracer = NewTracer()
-
-	con, _ := pgx.ConnectConfig(context.Background(), cfg)
-
-	return con, func() {
-		con.Close(context.Background())
-		snap.Finish()
-	}
-}
-
 func TestTracer_Trace_CRUD(t *testing.T) {
 	con, finish := getTestCon(t)
 	defer finish()
@@ -148,7 +134,7 @@ func TestTracer_connect(t *testing.T) {
 		txn.End()
 
 		app.ExpectMetricsPresent(t, []internal.WantMetric{
-			{Name: "Datastore/instance/Postgres/" + hostnameTest() + "/" + tracer.BaseSegment.PortPathOrID},
+			{Name: "Datastore/instance/Postgres/" + getDBHostname() + "/" + tracer.BaseSegment.PortPathOrID},
 		})
 	})
 }
@@ -178,7 +164,7 @@ func TestTracer_batch(t *testing.T) {
 		txn.End()
 
 		app.ExpectMetricsPresent(t, []internal.WantMetric{
-			{Name: "Datastore/instance/Postgres/" + hostnameTest() + "/" + tracer.BaseSegment.PortPathOrID},
+			{Name: "Datastore/instance/Postgres/" + getDBHostname() + "/" + tracer.BaseSegment.PortPathOrID},
 			{Name: "Datastore/operation/Postgres/batch"},
 		})
 	})
@@ -267,7 +253,7 @@ func TestTracer_inPool(t *testing.T) {
 				_, _ = con.Exec(ctx, "SELECT 1")
 			},
 			metric: []internal.WantMetric{
-				{Name: "Datastore/instance/Postgres/" + hostnameTest() + "/" + u.Port()},
+				{Name: "Datastore/instance/Postgres/" + getDBHostname() + "/" + u.Port()},
 			},
 		},
 	}
@@ -286,7 +272,23 @@ func TestTracer_inPool(t *testing.T) {
 	}
 }
 
-func hostnameTest() string {
+func getTestCon(t testing.TB) (*pgx.Conn, func()) {
+	snap := pgsnap.NewSnap(t, os.Getenv("PGSNAP_DB_URL"))
+
+	cfg, _ := pgx.ParseConfig(snap.Addr())
+	cfg.Tracer = NewTracer()
+
+	con, _ := pgx.ConnectConfig(context.Background(), cfg)
+
+	return con, func() {
+		_ = con.Close(context.Background())
+		snap.Finish()
+	}
+}
+
+// getDBHostname that should be localhost or local hostname
+// becase the db is listen in local
+func getDBHostname() string {
 	h, err := os.Hostname()
 	if err != nil {
 		return "127.0.0.1"
